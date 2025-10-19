@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flower Ring Galaxy</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000000;
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block;
+            width: 100vw !important; 
+            height: 100vh !important; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 1;
+        }
+        .stars-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 1px, transparent 1px);
+            background-size: 10px 10px;
+            z-index: 0;
+            animation: twinkle 4s infinite linear;
+        }
+        @keyframes twinkle {
+            0% { opacity: 0.5; }
+            50% { opacity: 0.9; }
+            100% { opacity: 0.5; }
+        }
+        .info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 3;
+            font-size: 14px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+</head>
+<body>
+    <div class="stars-bg"></div>
+    <div class="info">
+        
+    </div>
+
+    <!-- HIDDEN SVG PATH FOR HEART (used to sample points for particles) -->
+    <svg id="heartSVG" viewBox="0 0 600 552" style="position:absolute; width:0; height:0; overflow:visible; pointer-events:none;">
+      <path id="heartPath" d="M300,107.77C284.68,55.67,239.76,0,162.31,0,64.83,0,0,82.08,0,171.71c0,.48,0,.95,0,1.43-.52,19.5,0,217.94,299.87,379.69v0l0,0,.05,0,0,0,0,0v0C600,391.08,600.48,192.64,600,173.14c0-.48,0-.95,0-1.43C600,82.08,535.17,0,437.69,0,360.24,0,315.32,55.67,300,107.77" fill="#ee5282"/>
+    </svg>
+    
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
+        "three/addons/controls/OrbitControls.js": "https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js",
+        "three/addons/loaders/FontLoader.js": "https://unpkg.com/three@0.152.2/examples/jsm/loaders/FontLoader.js",
+        "three/addons/geometries/TextGeometry.js": "https://unpkg.com/three@0.152.2/examples/jsm/geometries/TextGeometry.js"
+      }
+    }
+    </script>
+    
+    <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+    import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+    
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    // Audio setup
+    const audioListener = new THREE.AudioListener();
+    camera.add(audioListener);
+    const sound = new THREE.Audio(audioListener);
+    const audioLoader = new THREE.AudioLoader();
+    let isPlaying = false;
+    let isAudioLoaded = false;
+
+    audioLoader.load(
+        'Stephen Sanchez - Until I Found You (Alphasvara Lo-Fi Remix) - Alphasvara.mp3',
+        (buffer) => {
+            sound.setBuffer(buffer);
+            sound.setLoop(true);
+            sound.setVolume(0.5);
+            isAudioLoaded = true;
+            console.log('Audio loaded successfully');
+        },
+        undefined,
+        (error) => {
+            console.error('Failed to load audio:', error.message);
+        }
+    );
+
+    function toggleAudio() {
+        if (audioListener.context.state === 'suspended') {
+            audioListener.context.resume().then(() => {
+                console.log('Audio context resumed');
+                playAudio();
+            }).catch((err) => {
+                console.error('Failed to resume audio context:', err);
+            });
+        } else {
+            playAudio();
+        }
+    }
+
+    function playAudio() {
+        if (isAudioLoaded) {
+            try {
+                if (isPlaying) {
+                    sound.pause();
+                    isPlaying = false;
+                    console.log('Audio paused');
+                } else {
+                    sound.play();
+                    isPlaying = true;
+                    console.log('Audio playback started');
+                }
+            } catch (err) {
+                console.error('Audio playback failed:', err.message);
+            }
+        } else {
+            console.warn('Audio not yet loaded');
+        }
+    }
+
+    // Toggle audio on spacebar press
+    window.addEventListener('keydown', (event) => {
+        if (event.code === 'Space') {
+            event.preventDefault();
+            toggleAudio();
+            triggerCameraAnimation();
+        }
+    });
+
+    // Reset isPlaying when audio ends
+    sound.onEnded = () => {
+        isPlaying = false;
+        console.log('Audio playback ended');
+    };
+
+    // OrbitControls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 50;    // khoảng cách gần nhất cho phép (càng nhỏ càng sát tâm)
+    controls.maxDistance = 1700;  // khoảng cách xa nhất (vượt quá thì không zoom ra thêm được)
+
+    // FIX: Set target ban đầu xuống đất để chúi xuống nhìn đất
+    controls.target.set(0, -1200, 0);
+    controls.update();
+
+
+    // Add ambient light
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    // Add background particles
+    const particleCount = 1500;
+    const particlesGeometry = new THREE.BufferGeometry();
+    const posArray = new Float32Array(particleCount * 3);
+    const colorsArray = new Float32Array(particleCount * 3);
+    for (let i = 0; i < particleCount * 3; i += 3) {
+        posArray[i] = (Math.random() - 0.5) * 3000;
+        posArray[i + 1] = (Math.random() - 0.5) * 3000;
+        posArray[i + 2] = (Math.random() - 0.5) * 3000;
+        const color = new THREE.Color(
+            Math.random() * 0.5 + 0.5,
+            Math.random() * 0.3 + 0.7,
+            Math.random() * 0.5 + 0.5
+        );
+        colorsArray[i] = color.r;
+        colorsArray[i + 1] = color.g;
+        colorsArray[i + 2] = color.b;
+    }
+    particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+    const particleMaterial = new THREE.PointsMaterial({
+        size: 7,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.8
+    });
+    const particles = new THREE.Points(particlesGeometry, particleMaterial);
+    scene.add(particles);
+    particles.position.y += 50;
+
+
+    // Add filled particle disk (radius 500)
+    const diskParticleCount = 35000;
+    const maxRadius = 500;
+    const diskHeightRange = 3;
+    const diskGeometry = new THREE.BufferGeometry();
+    const diskPosArray = new Float32Array(diskParticleCount * 3);
+    const diskColorsArray = new Float32Array(diskParticleCount * 3);
+    for (let i = 0; i < diskParticleCount * 3; i += 3) {
+        const radius = Math.sqrt(Math.random()) * maxRadius;
+        const angle = Math.random() * Math.PI * 2;
+        const height = (Math.random() - 0.5) * diskHeightRange * 2;
+        diskPosArray[i] = Math.cos(angle) * radius;
+        diskPosArray[i + 1] = height;
+        diskPosArray[i + 2] = Math.sin(angle) * radius;
+        const color = new THREE.Color(1.0, 0.8, 0.9);
+        diskColorsArray[i] = color.r;
+        diskColorsArray[i + 1] = color.g;
+        diskColorsArray[i + 2] = color.b;
+    }
+    diskGeometry.setAttribute('position', new THREE.BufferAttribute(diskPosArray, 3));
+    diskGeometry.setAttribute('color', new THREE.BufferAttribute(diskColorsArray, 3));
+    const diskMaterial = new THREE.PointsMaterial({
+        size: 0.7,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1
+    });
+    const particleDisk = new THREE.Points(diskGeometry, diskMaterial);
+    scene.add(particleDisk);
+
+    // Add inner particle disk (radius 90)
+    const innerDiskParticleCount = 2900;
+    const innerMaxRadius = 90;
+    const innerDiskHeightRange = 5;
+    const innerDiskGeometry = new THREE.BufferGeometry();
+    const innerDiskPosArray = new Float32Array(innerDiskParticleCount * 3);
+    const innerDiskColorsArray = new Float32Array(innerDiskParticleCount * 3);
+    for (let i = 0; i < innerDiskParticleCount * 3; i += 3) {
+        const radius = Math.sqrt(Math.random()) * innerMaxRadius;
+        const angle = Math.random() * Math.PI * 2;
+        const height = (Math.random() - 0.5) * innerDiskHeightRange * 2;
+        innerDiskPosArray[i] = Math.cos(angle) * radius;
+        innerDiskPosArray[i + 1] = height;
+        innerDiskPosArray[i + 2] = Math.sin(angle) * radius;
+        const color = new THREE.Color(1.0, 0.8, 0.9);
+        innerDiskColorsArray[i] = color.r;
+        innerDiskColorsArray[i + 1] = color.g;
+        innerDiskColorsArray[i + 2] = color.b;
+    }
+    innerDiskGeometry.setAttribute('position', new THREE.BufferAttribute(innerDiskPosArray, 3));
+    innerDiskGeometry.setAttribute('color', new THREE.BufferAttribute(innerDiskColorsArray, 3));
+    const innerDiskMaterial = new THREE.PointsMaterial({
+        size: 0.7,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1
+    });
+    const innerParticleDisk = new THREE.Points(innerDiskGeometry, innerDiskMaterial);
+    scene.add(innerParticleDisk);
+
+    // Add outermost particle disk (radius 500 to 550)
+    const outermostDiskParticleCount = 2000;
+    const outermostInnerRadius = 500;
+    const outermostOuterRadius = 550;
+    const outermostDiskHeightRange = 2;
+    const outermostDiskGeometry = new THREE.BufferGeometry();
+    const outermostDiskPosArray = new Float32Array(outermostDiskParticleCount * 3);
+    const outermostDiskColorsArray = new Float32Array(outermostDiskParticleCount * 3);
+    for (let i = 0; i < outermostDiskParticleCount * 3; i += 3) {
+        const radius = outermostInnerRadius + Math.random() * (outermostOuterRadius - outermostInnerRadius);
+        const angle = Math.random() * Math.PI * 2;
+        const height = (Math.random() - 0.5) * outermostDiskHeightRange * 2;
+        outermostDiskPosArray[i] = Math.cos(angle) * radius;
+        outermostDiskPosArray[i + 1] = height;
+        outermostDiskPosArray[i + 2] = Math.sin(angle) * radius;
+        const color = new THREE.Color(1.0, 0.8, 0.9);
+        outermostDiskColorsArray[i] = color.r;
+        outermostDiskColorsArray[i + 1] = color.g;
+        outermostDiskColorsArray[i + 2] = color.b;
+    }
+    outermostDiskGeometry.setAttribute('position', new THREE.BufferAttribute(outermostDiskPosArray, 3));
+    outermostDiskGeometry.setAttribute('color', new THREE.BufferAttribute(outermostDiskColorsArray, 3));
+    const outermostDiskMaterial = new THREE.PointsMaterial({
+        size: 0.7,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1
+    });
+    const outermostParticleDisk = new THREE.Points(outermostDiskGeometry, outermostDiskMaterial);
+    scene.add(outermostParticleDisk);
+
+    // Add sphere with shader
+    const sphereGeometry = new THREE.SphereGeometry(30, 64, 64);
+    const sphereMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            uTime: { value: 0.0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            void main() {
+                vUv = uv;
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float uTime;
+            varying vec2 vUv;
+            varying vec3 vNormal;
+
+            float random(vec2 st) {
+                return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+            }
+
+            float noise(vec2 st) {
+                vec2 i = floor(st);
+                vec2 f = fract(st);
+                float a = random(i);
+                float b = random(i + vec2(1.0, 0.0));
+                float c = random(i + vec2(0.0, 1.0));
+                float d = random(i + vec2(1.0, 1.0));
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }
+
+            void main() {
+                vec2 uv = vUv;
+                float n = noise(uv * 3.0 + uTime * 0.1);
+                vec3 color = vec3(
+                    sin(n * 6.28 + uTime * 0.2) * 0.5 + 0.7,
+                    sin(n * 6.28 + uTime * 0.2 + 2.0) * 0.5 + 0.7,
+                    sin(n * 6.28 + uTime * 0.2 + 4.0) * 0.5 + 0.7
+                );
+
+                float twinkle = sin(uTime * 2.0 + n * 10.0) * 0.3 + 0.8;
+                color *= twinkle;
+
+                float intensity = dot(vNormal, vec3(0.0, 0.0, 1.0));
+                color *= mix(0.8, 1.2, intensity);
+
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `,
+        side: THREE.DoubleSide
+    });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    scene.add(sphere);
+
+    // Add atmosphere
+    const atmosphereGeometry = new THREE.SphereGeometry(31.2, 64, 64);
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0.0 } },
+        vertexShader: `
+            varying vec3 vNormal;
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            varying vec3 vNormal;
+            void main() {
+                float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+                gl_FragColor = vec4(0.3, 0.6, 1.0, intensity * 0.6);
+            }
+        `,
+        side: THREE.BackSide,
+        transparent: true,
+        blending: THREE.AdditiveBlending
+    });
+    const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+    scene.add(atmosphere);
+    
+const fontLoaderText = new FontLoader();
+fontLoaderText.load(
+  'https://unpkg.com/three@0.152.2/examples/fonts/helvetiker_regular.typeface.json',
+  function (font) {
+    const textGeo = new TextGeometry('HAPPY 20/10 <3', {
+      font: font,
+      size: 30,          // cỡ chữ (to nhỏ tùy chỉnh)
+      height: 0.5,        // độ dày
+      curveSegments: 12
+    });
+
+    const textMat = new THREE.MeshPhongMaterial({
+      color: 0xff69b4,     // màu hồng
+      emissive: 0xff99cc,  // ánh sáng nhẹ
+      shininess: 80
+    });
+
+    const textMesh = new THREE.Mesh(textGeo, textMat);
+
+    textMesh.position.set(-170, 130, 0); // vị trí chữ (cao hơn hành tinh)
+    textMesh.rotation.y = 0;         // nghiêng nhẹ để dễ nhìn
+    scene.add(textMesh);
+
+    // hiệu ứng nhấp nháy nhẹ nhàng cho chữ
+    
+  }
+);
+
+        
+
+    // -----------------------------
+    // INSERTED: Heart particles (fixed version)
+    // -----------------------------
+    (function addHeartParticles() {
+        try {
+            const heartPath = document.getElementById('heartPath');
+            if (!heartPath) {
+                console.warn('Heart path not found — skipping heart particles.');
+                return;
+            }
+
+            const heartLength = heartPath.getTotalLength();
+            const heartVertices = [];
+
+            for (let i = 0; i < heartLength; i += 0.1) {
+                const p = heartPath.getPointAtLength(i);
+                const v = new THREE.Vector3(p.x - 300, -p.y + 276, 0);
+                v.x += (Math.random() - 0.5) * 30;
+                v.y += (Math.random() - 0.5) * 30;
+                v.z += (Math.random() - 0.5) * 70;
+                heartVertices.push(v);
+
+                // Animate each vector from center
+                gsap.from(v, {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    duration: gsap.utils.random(2, 5),
+                    ease: "power2.inOut",
+                    repeat: -1,
+                    yoyo: true
+                });
+            }
+
+            const heartGeometry = new THREE.BufferGeometry().setFromPoints(heartVertices);
+            const heartMaterial = new THREE.PointsMaterial({
+                color: 0xee5282,
+                blending: THREE.AdditiveBlending,
+                size: 0.08,
+                transparent: true,
+                opacity: 1
+            });
+            const heartPoints = new THREE.Points(heartGeometry, heartMaterial);
+            heartPoints.position.set(0, 42, 0);
+            scene.add(heartPoints);
+
+            // Update in animate loop
+            addHeartParticles._update = function () {
+                heartGeometry.setFromPoints(heartVertices);
+                heartGeometry.attributes.position.needsUpdate = true;
+            };
+        } catch (err) {
+            console.error('Error creating heart particles:', err);
+        }
+    })();
+
+const flowerRing = new THREE.Group();
+scene.add(flowerRing);
+
+const textureLoader = new THREE.TextureLoader();
+
+// 🔹 Danh sách 31 ảnh (đặt tên tùy bạn)
+const imageList = [
+  'flower1.jpg', 'flower2.jpg', 'flower3.jpg', 'flower4.jpg', 'flower5.jpg',
+  'flower6.jpg', 'flower7.jpg', 'flower8.jpg', 'flower9.jpg', 'flower10.jpg',
+  'flower11.jpg', 'flower12.jpg', 'flower13.jpg', 'flower14.jpg', 'flower15.jpg',
+  'flower16.jpg', 'flower17.jpg', 'flower18.jpg', 'flower19.jpg', 'flower20.jpg',
+  'flower21.jpg', 'flower22.jpg', 'flower23.jpg', 'flower24.jpg', 'flower25.jpg',
+  'flower26.jpg', 'flower27.jpg', 'flower28.jpg', 'flower29.jpg', 'flower30.jpg',
+  'flower31.jpg'
+];
+
+// 🔹 Load sẵn tất cả texture 1 lần để tránh lag
+const textures = imageList.map(img => textureLoader.load(img));
+
+const numFlowers = 1600;
+const innerRadius = 120;
+const outerRadius = 500;
+const heightRange = 10;
+
+// 🔹 Tạo mảng chứa chỉ số ảnh đảm bảo đủ 31 ảnh đầu tiên
+let imageIndices = [];
+for (let i = 0; i < numFlowers; i++) {
+  imageIndices.push(i % textures.length); // lặp lại từ 0 → 30
+}
+
+// 🔹 Trộn ngẫu nhiên mảng này (Fisher–Yates shuffle)
+for (let i = imageIndices.length - 1; i > 0; i--) {
+  const j = Math.floor(Math.random() * (i + 1));
+  [imageIndices[i], imageIndices[j]] = [imageIndices[j], imageIndices[i]];
+}
+
+for (let i = 0; i < numFlowers; i++) {
+  const texture = textures[imageIndices[i]];
+
+  const flowerMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 1
+  });
+
+  const sprite = new THREE.Sprite(flowerMaterial.clone());
+  const angle = Math.random() * Math.PI * 2;
+  const radius = innerRadius + Math.random() * (outerRadius - innerRadius);
+  const height = (Math.random() - 0.5) * heightRange * 2;
+
+  sprite.position.set(
+    Math.cos(angle) * radius,
+    height,
+    Math.sin(angle) * radius
+  );
+  
+  const size = 8.5 + Math.random() * 2;
+  sprite.scale.set(size, size, 1);
+  sprite.lookAt(0, height, 0);
+  
+  flowerRing.add(sprite);
+}
+
+    // Add point lights
+    const light1 = new THREE.PointLight(0xffffff, 1, 500);
+    light1.position.set(100, 100, 100);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xffffff, 0.5, 500);
+    light2.position.set(-100, -100, -100);
+    scene.add(light2);
+
+    // Define text material with fade effect
+    const textMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            fadeStartY: { value: 680.0 },
+            fadeRange: { value: 100.0 },
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying float vYPos;
+            void main() {
+                vUv = uv;
+                vYPos = position.y;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float fadeStartY;
+            uniform float fadeRange;
+            varying float vYPos;
+            void main() {
+                float alpha = 1.0;
+                if (vYPos < fadeStartY) {
+                    alpha = smoothstep(fadeStartY - fadeRange, fadeStartY, vYPos);
+                }
+                gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+            }
+        `,
+        transparent: true
+    });
+
+    // Load font and create orbiting text
+const fontLoader = new FontLoader();
+fontLoader.load('https://unpkg.com/three@0.152.2/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+    const text1 = 'HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10  ';
+    const text2 = 'HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 ';
+    const text3 = 'HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 HAPPY 20/10 ';
+    const radius1 = 48;
+    const radius2 = 42;
+    const speed = 0.006;
+    const speed3 = 0.005;
+
+    const textRing1 = new THREE.Group();
+    const textRing2 = new THREE.Group();
+    const textRing3 = new THREE.Group();
+    scene.add(textRing1, textRing2, textRing3);
+
+    // Create text for Ring 1
+    for (let i = 0; i < text1.length; i++) {
+        const geometry = new TextGeometry(text1[i], {
+            font: font,
+            size: 1.8,
+            height: 0.3,
+            curveSegments: 12,
+            bevelEnabled: false
+        });
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const letter = new THREE.Mesh(geometry, material);
+        const angle = (i / text1.length) * Math.PI * 2;
+        letter.position.x = radius1 * Math.cos(angle);
+        letter.position.z = radius1 * Math.sin(angle);
+        letter.rotation.y = -angle - Math.PI / 2;
+        textRing1.add(letter);
+    }
+
+    // Create text for Ring 2
+    for (let i = 0; i < text2.length; i++) {
+        const geometry = new TextGeometry(text2[i], {
+            font: font,
+            size: 1.8,
+            height: 0.3,
+            curveSegments: 12,
+            bevelEnabled: false
+        });
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const letter = new THREE.Mesh(geometry, material);
+        const angle = (i / text2.length) * Math.PI * 2;
+        letter.position.x = radius2 * Math.cos(angle);
+        letter.position.z = radius2 * Math.sin(angle);
+        letter.rotation.y = -angle - Math.PI / 2;
+        textRing2.add(letter);
+    }
+
+    // Create text for Ring 3 - Vòng tròn xoay quanh tâm (0,0,0)
+    const letters3 = [];
+    const newRadius3 = Math.sqrt(780*780 + 680*680); // ≈ 1020
+    const startAngle = Math.atan2(680, 780); // Góc để bắt đầu từ điểm (780,680)
+
+    for (let i = 0; i < text3.length; i++) {
+        const geometry = new TextGeometry(text3[i], {
+            font: font,
+            size: 15,
+            height: 0.5,
+            curveSegments: 12,
+            bevelEnabled: false
+        });
+        
+        const letter = new THREE.Mesh(geometry, textMaterial.clone());
+        const angle = startAngle + (i / text3.length) * Math.PI * 2;
+        
+        letter.position.x = newRadius3 * Math.cos(angle);
+        letter.position.y = newRadius3 * Math.sin(angle);
+        letter.position.z = 0;
+        
+        letter.rotation.z = angle + Math.PI/2;
+        
+        letter.userData = {
+            initialAngle: angle,
+            index: i
+        };
+        
+        textRing3.add(letter);
+        letters3.push(letter);
+    }
+
+    // Tilt rings for X-shape
+    textRing1.rotation.z = Math.PI / 4;
+    textRing2.rotation.z = -Math.PI / 4;
+    textRing3.rotation.z = Math.PI / 4;
+
+    // Animation loop
+    function animate(time) {
+        requestAnimationFrame(animate);
+
+        particles.rotation.y += 0.0008;
+        sphere.rotation.y += 0.0008;
+        sphere.rotation.x += 0.0008;
+        sphereMaterial.uniforms.uTime.value = time * 0.0008;
+        atmosphereMaterial.uniforms.uTime.value = time * 0.0008;
+
+        // Rotate text rings
+        textRing1.rotation.y += speed;
+        textRing2.rotation.y -= speed;
+
+        // Animate individual letters in textRing3
+        for (let i = 0; i < letters3.length; i++) {
+            const letter = letters3[i];
+            const angle = letter.userData.initialAngle + time * 0.001 * speed3;
+            
+            letter.position.x = newRadius3 * Math.cos(angle);
+            letter.position.y = newRadius3 * Math.sin(angle);
+            letter.position.z = 0;
+            
+            letter.rotation.z = angle + Math.PI/2;
+        }
+
+        // Rotate flower ring
+        flowerRing.rotation.y += 0.0008;
+
+        // Rotate particle disks
+        particleDisk.rotation.y += 0.0008;
+        innerParticleDisk.rotation.y += 0.0008;
+        outermostParticleDisk.rotation.y += 0.0008;
+
+        // update heart geometry if present (keeps particle positions synced with GSAP animated vectors)
+        if (typeof addHeartParticles !== 'undefined' && addHeartParticles._update) {
+            try { addHeartParticles._update(time); } catch(e) { /* ignore */ }
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate(0);
+});
+
+// Camera setup — bắt đầu đúng từ vị trí yêu cầu
+camera.position.set(0, -500, 0);
+controls.target.set(0, -1200, 0);
+controls.update();
+
+// Camera animation setup
+let isAnimating = false;
+let lastTapTime = 0;
+let lastTapPos = { x: 0, y: 0 };
+const doubleTapDelay = 300;
+const doubleTapDistance = 30;
+
+function triggerCameraAnimation() {
+    if (isAnimating) return;
+    isAnimating = true;
+    controls.enabled = false;
+
+    // Lưu vị trí và mục tiêu ban đầu
+    const startPosition = { 
+        x: camera.position.x, 
+        y: camera.position.y, 
+        z: camera.position.z 
+    };
+    
+    const startTarget = {
+        x: controls.target.x,
+        y: controls.target.y, 
+        z: controls.target.z
+    };
+
+    const endTarget = { x: 0, y: 0, z: 0 }; // Mục tiêu cuối cùng
+
+    const tl = gsap.timeline({
+        onUpdate: () => {
+            controls.target.set(
+                startTarget.x, 
+                startTarget.y, 
+                startTarget.z
+            );
+            controls.update();
+        },
+        onComplete: () => {
+            isAnimating = false;
+            controls.enabled = true;
+        }
+    });
+
+    // 🎬 Animation mượt mà với chuyển tiếp liên tục
+    tl
+    // Bước 1: Di chuyển từ vị trí ban đầu đến vị trí thấp đầu tiên
+    .to(camera.position, { 
+        y: 15, 
+        z: 150, 
+        duration: 7, 
+        ease: "power2.inOut" 
+    })
+    // Bước 2: Tiếp tục bay lên
+    .to(camera.position, { 
+        y: 15, 
+        z: 490, 
+        duration: 30, 
+        ease: "power2.inOut" 
+    })
+    
+   
+
+    // Animation cho target (hướng nhìn) - từ từ nâng tầm nhìn lên
+    gsap.to(startTarget, {
+        y: 0,
+        duration: 7, // Tổng thời gian của tất cả animation
+        ease: "power2.inOut",
+        onUpdate: () => {
+            controls.target.set(startTarget.x, startTarget.y, startTarget.z);
+            controls.update();
+        }
+    });
+}
+
+    // Double-click handler for desktop
+    window.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        toggleAudio();
+        triggerCameraAnimation();
+    });
+
+    // Double-tap handler for mobile
+    window.addEventListener('touchstart', (event) => {
+        if (event.touches.length === 1) {
+            event.preventDefault();
+            const currentTime = new Date().getTime();
+            const tapPos = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            const timeSinceLastTap = currentTime - lastTapTime;
+            const distance = Math.sqrt(
+                Math.pow(tapPos.x - lastTapPos.x, 2) + Math.pow(tapPos.y - lastTapPos.y, 2)
+            );
+
+            if (timeSinceLastTap <= doubleTapDelay && distance < doubleTapDistance) {
+                toggleAudio();
+                triggerCameraAnimation();
+            }
+
+            lastTapTime = currentTime;
+            lastTapPos = tapPos;
+        }
+    });
+    </script>
+</body>
+</html>
